@@ -165,3 +165,10 @@ curl --request POST \
 ```
 
 5. You'll now verify that we are now missing some of the expected headers from the claim-to-header extraction
+
+## Open Questions
+
+1. Is this not expected functionality?
+2. If it IS expected functionality, where is it breaking? It's not clear from the `jwt` logs nor others tested
+3. If it needs to be treated as a regex, what is the correct way to escape the string?
+
