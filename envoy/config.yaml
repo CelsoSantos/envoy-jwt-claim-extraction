@@ -1,0 +1,208 @@
+admin:
+  # access_log_path: /dev/null
+  # profile_path: /tmp/envoy.prof
+  address:
+    socket_address: 
+      address: 0.0.0.0
+      port_value: 19000
+
+static_resources:
+  listeners:
+  - name: listener_http
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8080
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          codec_type: auto
+          stat_prefix: http
+          use_remote_address: true
+          upgrade_configs:
+            - upgrade_type: websocket
+          normalize_path: true
+          route_config:
+            virtual_hosts:
+            - name: default
+              domains:
+              - "*"
+              typed_per_filter_config:
+                envoy.filters.http.cors:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                  allow_origin_string_match:
+                  - safe_regex:
+                      regex: .*
+                  allow_credentials: true
+              routes:
+              - match:
+                  prefix: /echo
+                  headers:
+                    - name: authorization
+                      present_match: true
+                route:
+                  cluster: echo_cluster
+                  auto_host_rewrite: true
+                  timeout: 30s
+              - match:
+                  prefix: /echo
+                route:
+                  cluster: echo_cluster
+                  auto_host_rewrite: true
+                  timeout: 30s
+                typed_per_filter_config:
+                  envoy.filters.http.jwt_authn:
+                    '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.PerRouteConfig
+                    disabled: true
+              - match:
+                  prefix: /
+                  headers:
+                    - name: authorization
+                      present_match: true
+                route:
+                  cluster: jwks_cluster
+                  auto_host_rewrite: false
+                  timeout: 30s
+              - match:
+                  prefix: /
+                route:
+                  cluster: jwks_cluster
+                  auto_host_rewrite: false
+                  timeout: 30s
+                typed_per_filter_config:
+                  envoy.filters.http.jwt_authn:
+                    '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.PerRouteConfig
+                    disabled: true
+            response_headers_to_remove:
+              - x-user-id
+          # access_log:
+          # - name: envoy.access_loggers.stdout
+          #   typed_config:
+          #     "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+          http_filters:
+          - name: envoy.filters.http.health_check
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+              pass_through_mode: false
+              headers:
+                - name: ":path"
+                  string_match:
+                    exact: "/health"
+          - name: envoy.filters.http.cors
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+          - name: envoy.filters.http.csrf
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.csrf.v3.CsrfPolicy
+              filter_enabled:
+                default_value: {}
+          - name: envoy.filters.http.jwt_authn
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+              providers:
+                idp:
+                  issuer: http://example.org/
+                  remote_jwks:
+                    http_uri:
+                      uri: http://jwks-server:8080/.well-known/jwks.json
+                      cluster: jwks_cluster
+                      timeout: 30s
+                    cache_duration: 120s
+                    async_fetch:
+                      fast_listener: true
+                    retry_policy:
+                      retry_back_off:
+                        base_interval: 0.01s
+                        max_interval: 2s
+                      num_retries: 5
+                  forward: true
+                  payload_in_metadata: jwt_data
+                  claim_to_headers:
+                  - header_name: cookie
+                    claim_name: flavour
+                  - header_name: x-subject
+                    claim_name: sub
+                  - header_name: x-simple-claim
+                    claim_name: parent_token
+                  - header_name: x-url-value-claim
+                    claim_name: some_url_value
+                  - header_name: x-url-key-claim
+                    claim_name: http://example.org/parent_token
+                  - header_name: x-quoted-claim
+                    claim_name: 'http://example.org/parent_token'
+                  - header_name: x-regex-1-claim
+                    claim_name: http:\/\/example.org\/parent_token
+                  - header_name: x-regex-2-claim
+                    claim_name: http:\\/\\/example\\.org\\/parent_token
+              rules:
+                - match:
+                    safe_regex:
+                      regex: /.+
+                  requires:
+                    provider_name: idp
+          - name: envoy.filters.http.lua
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+              default_source_code:
+                inline_string: |
+                  function envoy_on_request(request_handle)
+                    local metadata = request_handle:streamInfo():dynamicMetadata()
+                    local auth_data = metadata:get("envoy.filters.http.jwt_authn")
+                    local jwt_data = auth_data ~= nil and auth_data["jwt_data"] or nil
+
+                    if jwt_data ~= nil then
+                      request_handle:headers():add("Lua-User-claim", jwt_data["sub"])
+                      request_handle:headers():add("Lua-Flavour-claim", jwt_data["flavour"])
+                      request_handle:headers():add("Lua-Parent-Token-claim", jwt_data["parent_token"])
+                      request_handle:headers():add("Lua-Url-Value-claim", jwt_data["some_url_value"])
+                      request_handle:headers():add("Lua-Url-Key-claim", jwt_data["http://example.org/parent_token"])
+                    end
+                  end
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+  - name: jwks_cluster
+    type: logical_dns
+    connect_timeout: 30s
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: jwks_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: jwks-server
+                port_value: 8080
+            health_check_config:
+              hostname: jwks-server
+            hostname: jwks-server
+  - name: echo_cluster
+    type: logical_dns
+    connect_timeout: 30s
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: echo
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: echo
+                port_value: 8080
+            health_check_config:
+              hostname: echo
+            hostname: echo
+
+application_log_config:
+  log_format:
+    json_format:
+      timestamp: "%Y-%m-%dT%T.%e"
+      threadId: "%t"
+      logger: "%n"
+      source: "%g:%#"
+      level: "%l"
+      message: "%j"

@@ -1,0 +1,49 @@
+@protocol = http
+@address = localhost
+# @port = 8443
+
+@content-type = application/json
+@accept = application/json
+
+# @name jwksKey
+GET {{protocol}}://{{address}}/.well-known/jwks.json
+Content-Type: {{content-type}}
+Accept: {{accept}}
+###
+
+# @name simpleEcho
+GET {{protocol}}://{{address}}/echo
+Content-Type: {{content-type}}
+Accept: {{accept}}
+###
+
+# @name signJwt
+POST {{protocol}}://{{address}}/jwt/sign
+Content-Type: {{content-type}}
+Accept: {{accept}}
+
+{
+  "iss": "http://example.org/",
+  "sub": "johndoe@example.org",
+  "iat": 1712240289,
+  "exp": 1743776289,
+  "aud": "http://example.org",
+  "flavour": "chocolate",
+  "parent_token": "abc",
+  "some_url_value": "http://example.org/about",
+  "http://example.org/parent_token": "xyz"
+}
+//exp: 2025-04-04T15:18:09
+###
+
+# @name echoWithToken
+POST {{protocol}}://{{address}}/echo
+Content-Type: {{content-type}}
+Accept: {{accept}}
+Authorization: Bearer {{signJwt.response.body.jwt}}
+Cookie: vanilla
+
+{
+  "ping": "pong"
+}
+###

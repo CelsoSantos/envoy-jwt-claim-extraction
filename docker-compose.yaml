@@ -1,0 +1,72 @@
+version: "3.8"
+services:
+  envoy:
+    cap_drop:
+      - ALL
+    command:
+      - "-c"
+      - "/config/envoy.yaml"
+      # - "--enable-fine-grain-logging"
+      # - "--disable-hot-restart"
+    container_name: envoy
+    environment:
+      - ENVOY_UID=0
+    healthcheck:
+      retries: 10
+    image: envoyproxy/envoy:v1.29-latest
+    networks:
+      envoy-dev:
+      #   ipv4_address: 172.26.0.2
+    ports:
+      - "80:8080"
+      - "443:8443"
+      - "19000:19000"
+    restart: always
+    volumes:
+      - ./envoy/config.yaml:/config/envoy.yaml:rw
+      # [OPTIONAL] If you wish to enable SSL/TLS, use the following lines instead
+      # Certificate(s) and Key(s) must be in the PEM format.
+      # - ./envoy/config-ssl.yaml:/config/envoy.yaml:rw
+      # - ./ssl/cert.crt:/etc/ssl/cert.crt
+      # - ./ssl/private/cert.key:/etc/ssl/cert.key
+
+  # https://github.com/murar8/local-jwks-server
+  jwks-server:
+    image: ghcr.io/murar8/local-jwks-server:latest
+    # volumes:
+        # [OPTIONAL] Must contain a private key in PEM format.
+        # If no private key file is provided the server will generate
+        # a random key upon startup based on the provided configuration.
+        # The server conguration must match the private key format.
+        # - ./keys/key.pem:/etc/local-jwks-server/key.pem
+    ports:
+        - 8080:8080
+    # [OPTIONAL] Healthcheck command is configured by default.
+    healthcheck:
+        retries: 10
+    # extra_hosts:
+    #   - "example.org:172.26.0.1"
+    networks:
+      envoy-dev:
+      #   ipv4_address: 172.26.0.3
+
+  # https://github.com/mendhak/docker-http-https-echo
+  echo:
+    container_name: echo
+    image: mendhak/http-https-echo:31
+    # extra_hosts:
+    #   - "example.org:172.26.0.1"
+    ports:
+      - 9080:8080
+      - 9443:8443
+    networks:
+      envoy-dev:
+      #   ipv4_address: 172.26.0.4
+
+networks:
+  envoy-dev:
+    # driver: bridge
+    # ipam:
+    #   config:
+    #     - subnet: 172.26.0.0/16
+    #       gateway: 172.26.0.1
