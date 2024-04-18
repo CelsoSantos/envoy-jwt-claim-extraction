@@ -73,6 +73,27 @@ Given the following claim
   "http://example.org/parent_token": "xyz"
 }
 ```
+and the following `claim_to_headers` block
+
+```yaml
+claim_to_headers:
+- header_name: cookie
+  claim_name: flavour
+- header_name: x-subject
+  claim_name: sub
+- header_name: x-simple-claim
+  claim_name: parent_token
+- header_name: x-url-value-claim
+  claim_name: some_url_value
+- header_name: x-url-key-claim
+  claim_name: http://example.org/parent_token
+- header_name: x-quoted-claim
+  claim_name: 'http://example.org/parent_token'
+- header_name: x-regex-1-claim
+  claim_name: http:\/\/example.org\/parent_token
+- header_name: x-regex-2-claim
+  claim_name: http:\\/\\/example\\.org\\/parent_token
+```
 it is expected to obtain the following headers and respective values:
 
 | Claim                                | Header            | Expected Value             | Present?           |
@@ -169,6 +190,10 @@ curl --request POST \
 ## Open Questions
 
 1. Is this not expected functionality?
-2. If it IS expected functionality, where is it breaking? It's not clear from the `jwt` logs nor others tested
+2. If it IS expected functionality, where is it breaking? It's not clear from the `jwt` or `golang` logs nor others tested.
+  2.1. Which log(s) should expose this error?
 3. If it needs to be treated as a regex, what is the correct way to escape the string?
+  3.1. Go format?
+  3.2. Javascript format?
+  3.3. Other?
 
